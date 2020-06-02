@@ -1,0 +1,904 @@
+<script>
+var waioSelectors = {
+    "wholesaleDataKeyAttr": "waio-item-total-id",
+    "waioSingleDataKeyAttr": "waio-item-single-id",
+    "checkout": "[name*=checkout], a[href*=checkout]",
+    "addToCart": "form[action='/cart/add']",
+    "savedAmount": ".waio-saved-amount-msg"
+};
+
+// Translate from default waioTranslations to your own.
+var waioTranslations = {
+    "variant_title": "Variant Name",
+    "discount": "Discount",
+    "buy": "Buy",
+    "price": "Price per item",
+    "quantity": "Quantity",
+    "off": " Off",
+    "from": "From ",
+    "min_quantity": "Minimum Qty",
+    "max_quantity": "Maximum Qty",
+    "range_seperator": " to ",
+    "percent_symbol": "%",
+    "currency_symbol": "$",
+    "range_so_on": " + ",
+    "qualifies_full_message": "This product qualifies for [[discount]] discount!",
+    "coupon_code_btn": "Apply",
+    "buy_now_button": "Buy it now"
+};
+
+var waio_saved_amount_text = "You saved [[saved_amount]] amount.";
+
+if ((typeof WholesaleAIO) === 'undefined') {
+    window.WholesaleAIO = {};
+}
+if ((typeof WholesaleAllInOne) === 'undefined') {
+    window.WholesaleAllInOne = {};
+}
+if ((typeof waioMOC) === 'undefined') {
+    window.waioMOC = {};
+}
+
+</script>
+
+{%- assign products_per_page = 20 -%}
+{% assign collections_id = '' %}
+{% for item in cart.items %}{% for collection in item.product.collections %}{% assign collections_id = collections_id | append: product_id: item.product_id,collection_id:collection.id | append: ';' %}{% endfor %}{% endfor %}
+{% assign collections_a = collections_id | replace: '=>', ':' | replace: '"', '' %}
+{% assign collections_ids = collections_a | remove_last: ',' | split: ';' %}
+{% capture pro_json %}{% for item in collections_ids %}{% if forloop.last == true %}{{item}}{% else %}{{item}},{% endif %}{% endfor %}{% endcapture %}
+{% capture product_json %}[{{ pro_json }}]{% endcapture %}
+{%- assign ws_general_settings = shop.metafields.waioSettings.general_settings -%}
+{% capture discountRule %}{% for discount_rule in shop.metafields.waioDiscountRule %}{% if forloop.last == true %}{{ discount_rule | last |replace:'"', '\\"'  }}{% else %}{{ discount_rule | last | replace:'"', '\\"'  }},{% endif %}{% endfor %}{% endcapture %}
+{% comment %} Uncomment this line if variant contains any back slashes or forward slashes {% capture discountRule %}{% for discount_rule in shop.metafields.waioDiscountRule %}{% if forloop.last == true %}{{ discount_rule | last |replace:'"', '\\"' | replace:'\\', '//'  }}{% else %}{{ discount_rule | last | replace:'"', '\\"'|replace:'\\', '//'}},{% endif %}{% endfor %}{% endcapture %} {% endcomment %}
+{% capture wholesaleQB %}{% for qb in shop.metafields.waioQB %}{% if forloop.last == true %}{{ qb | last | replace:'"', '\\"' }}{% else %}{{ qb | last | replace:'"', '\\"' }},{% endif %}{% endfor %}{% endcapture %}
+{% capture selected_variant %}{{ product.selected_or_first_available_variant.id }}{% endcapture %} 
+{% assign rules_operator = 'and' %}{%- for OC in shop.metafields.waioOC -%}{% assign key = OC | first %}{% assign item = OC | last %}{% if item.status == 'active' %}{%assign rules_operator = item.rules_operator %}{%assign rules_message = item.message %}{% capture rules_checked %}{% for rule in item.rules %}{% case rule.column %}{%when 'cart_original_total_price'%}{%assign rule_price = rule.condition |times: 100 %}{%case rule.relation %}{%when 'equal'%}{%if cart.original_total_price == rule_price %}true{%else%}false{%endif%}{%when 'not_equal'%}{%if cart.original_total_price != rule_price %}true{%else%}false{%endif%}{%when 'greater_than'%}{%if rule_price < cart.original_total_price  %}true{%else%}false{%endif%}{%when 'less_than'%}{%if rule_price > cart.original_total_price %}true{%else%}false{%endif%}{%else%}{%endcase%}{%when 'customer_has_an_account' %}{%case rule.relation %}{%when 'equal'%}{%if rule.condition == 'true' %}{%if customer %}true{%else%}false{% endif %}{%endif%}{%when 'not_equal'%}{%if rule.condition == 'true' %}{%if customer %}false{%else%}true{% endif %}{%endif%}{%else%}{%endcase%}{%when 'customer_tag' %}{%case rule.relation %}{%when 'equal'%}{%if customer %}{%for tag in customer.tags %}{% if tag == rule.condition%}true{%break%}{% endif %}{% if forloop.last == true %}false{% endif %}{%endfor%}{%else%}false{%endif%}{%when 'not_equal'%}{%if customer %}{%for tag in customer.tags %}{% if tag != rule.condition%}true{%break%}{% endif %}{% if forloop.last == true %}false{% endif %}{%endfor%}{%else%}false{%endif%}{%else%}{%endcase%}{% else %}{%endcase%}{% if forloop.last == true %}{%else%},{% endif %}{% endfor %}{%endcapture%}{% endif %}{%- endfor -%}
+{% if template.name == 'product' or template == 'product' %}
+{% capture productInCollects %}{"product_id": "{{ product.id }}","product_handle": "{{ product.handle }}","collection_ids": [{% for collection in product.collections %}{% if collection != blank %}"{{ collection.id }}"{%if forloop.last == false %},{%endif%}{% endif %}{% endfor %}]}{% endcapture %}
+{% elsif template.name == 'search' or template == 'search'%}
+{% paginate search.results by products_per_page %}{% capture productInCollects %}{% for product in search.results %}{"product_id": {{ product.id | json }},"product_handle": {{ product.handle | json }},"collection_ids": [{% for collection in product.collections %}{% if collection != blank %}{{ collection.id | json }}{%if forloop.last == false %},{%endif%}{% endif %}{% endfor %}]}{%if forloop.last == false %},{%endif%}{% endfor %}{% endcapture %}{% endpaginate %}
+{% else %}
+{% paginate collection.products by products_per_page %}{% capture productInCollects %}{% for product in collection.products %}{"product_id": {{ product.id | json }},"product_handle": {{ product.handle | json }},"collection_ids": [{% for collection in product.collections %}{% if collection != blank %}{{ collection.id | json }}{%if forloop.last == false %},{%endif%}{% endif %}{% endfor %}]}{%if forloop.last == false %},{%endif%}{% endfor %}{% endcapture %}{% endpaginate %}
+{% endif %}
+
+{% if ws_general_settings != blank %}
+<script>
+    WholesaleAIO.debug = false;
+    WholesaleAIO.version = "{{waio_version}}";
+    WholesaleAIO.last_updated = "{{last_updated}}";
+    WholesaleAIO.template = "{{ template.name }}";
+    window.product_qb_applied = false;
+    window.collection_id = {{ collection.id | json }};
+    WholesaleAIO.signupForm = {{shop.metafields.waioForms.waio-forms-key | json }} || {};
+    WholesaleAIO.netTerms = {{shop.metafields.waioNetOrders.waio-net-term-order | json }} || {};
+    window.wsaioPreviewMode = true;
+    WholesaleAIO.init = function($){
+        if (!Array.prototype.findIndex) {
+            Object.defineProperty(Array.prototype, 'findIndex', {
+                value: function(predicate) {
+                // 1. Let O be ? ToObject(this value).
+                if (this == null) {
+                    throw new TypeError('"this" is null or not defined');
+                }
+                var o = Object(this);
+                // 2. Let len be ? ToLength(? Get(O, "length")).
+                var len = o.length >>> 0;
+                // 3. If IsCallable(predicate) is false, throw a TypeError exception.
+                if (typeof predicate !== 'function') {
+                    throw new TypeError('predicate must be a function');
+                }
+                // 4. If thisArg was supplied, let T be thisArg; else let T be undefined.
+                var thisArg = arguments[1];
+                // 5. Let k be 0.
+                var k = 0;
+                // 6. Repeat, while k < len
+                while (k < len) {
+                    // a. Let Pk be ! ToString(k).
+                    // b. Let kValue be ? Get(O, Pk).
+                    // c. Let testResult be ToBoolean(? Call(predicate, T, « kValue, k, O »)).
+                    // d. If testResult is true, return k.
+                    var kValue = o[k];
+                    if (predicate.call(thisArg, kValue, k, o)) {
+                    return k;
+                    }
+                    // e. Increase k by 1.
+                    k++;
+                }
+                // 7. Return -1.
+                return -1;
+                },
+                configurable: true,
+                writable: true
+            });
+        }
+        if (!Array.prototype.indexOf) {
+            Array.prototype.indexOf = function(searchElement, fromIndex) {
+                "use strict";
+                var k;
+
+                // 1. Let o be the result of calling ToObject passing
+                //    the this value as the argument.
+                if (this == null) {
+                throw new TypeError('"this" is null or not defined');
+                }
+
+                var o = Object(this);
+
+                // 2. Let lenValue be the result of calling the Get
+                //    internal method of o with the argument "length".
+                // 3. Let len be ToUint32(lenValue).
+                var len = o.length >>> 0;
+
+                // 4. If len is 0, return -1.
+                if (len === 0) {
+                return -1;
+                }
+
+                // 5. If argument fromIndex was passed let n be
+                //    ToInteger(fromIndex); else let n be 0.
+                var n = fromIndex | 0;
+
+                // 6. If n >= len, return -1.
+                if (n >= len) {
+                return -1;
+                }
+
+                // 7. If n >= 0, then Let k be n.
+                // 8. Else, n<0, Let k be len - abs(n).
+                //    If k is less than 0, then let k be 0.
+                k = Math.max(n >= 0 ? n : len - Math.abs(n), 0);
+
+                // 9. Repeat, while k < len
+                for (; k < len; k++) {
+                // a. Let Pk be ToString(k).
+                //   This is implicit for LHS operands of the in operator
+                // b. Let kPresent be the result of calling the
+                //    HasProperty internal method of o with argument Pk.
+                //   This step can be combined with c
+                // c. If kPresent is true, then
+                //    i.  Let elementK be the result of calling the Get
+                //        internal method of o with the argument ToString(k).
+                //   ii.  Let same be the result of applying the
+                //        Strict Equality Comparison Algorithm to
+                //        searchElement and elementK.
+                //  iii.  If same is true, return k.
+                if (k in o && o[k] === searchElement)
+                    return k;
+                }
+                return -1;
+            };
+        }
+
+        if (!Array.prototype.find) {
+            Object.defineProperty(Array.prototype, 'find', {
+                value: function(predicate) {
+                // 1. Let O be ? ToObject(this value).
+                if (this == null) {
+                    throw TypeError('"this" is null or not defined');
+                }
+                var o = Object(this);
+                // 2. Let len be ? ToLength(? Get(O, "length")).
+                var len = o.length >>> 0;
+                // 3. If IsCallable(predicate) is false, throw a TypeError exception.
+                if (typeof predicate !== 'function') {
+                    throw TypeError('predicate must be a function');
+                }
+                // 4. If thisArg was supplied, let T be thisArg; else let T be undefined.
+                var thisArg = arguments[1];
+                // 5. Let k be 0.
+                var k = 0;
+                // 6. Repeat, while k < len
+                while (k < len) {
+                    // a. Let Pk be ! ToString(k).
+                    // b. Let kValue be ? Get(O, Pk).
+                    // c. Let testResult be ToBoolean(? Call(predicate, T, « kValue, k, O »)).
+                    // d. If testResult is true, return kValue.
+                    var kValue = o[k];
+                    if (predicate.call(thisArg, kValue, k, o)) {
+                    return kValue;
+                    }
+                    // e. Increase k by 1.
+                    k++;
+                }
+                // 7. Return undefined.
+                return undefined;
+                },
+                configurable: true,
+                writable: true
+            });
+        }
+
+        function setCookie(a,c,b){var d=new Date;d.setTime(d.getTime()+6E4*b);b="expires="+d.toUTCString();document.cookie=a+"="+c+";"+b+";path=/"}function getCookie(a){a+="=";for(var c=document.cookie.split(";"),b=0;b<c.length;b++){for(var d=c[b];" "==d.charAt(0);)d=d.substring(1);if(0==d.indexOf(a))return d.substring(a.length,d.length)}return""}function deleteCookie(a){document.cookie=a+"=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";return null}
+        function checkCookie(){return""!=getCookie("draftpreview")?!0:!1}function getPByName(a,c){c||(c=window.location.href);a=a.replace(/[\\[\\]]/g,"\\\$&");var b=(new RegExp("[?&]"+a+"(=([^&#]*)|&|#|$)")).exec(c);return b?b[2]?decodeURIComponent(b[2].replace(/\\+/g," ")):"":null}(function(){var a=getPByName("draftpreview");null!==a&&""!==a&&setCookie("draftpreview","1",15)})();
+        WholesaleAIO.previewMode=function(a,c){a&&setCookie("draftpreview","1",15);c&&deleteCookie("draftpreview");
+        var b=checkCookie();b?log("Preview mode is ON"):log("Live mode is ON");return b};
+        // Some important variables
+        window.wsaioClosePreview = function(){
+            removeQueryString("draftpreview", getParameterByName("draftpreview")[0])
+            WholesaleAIO.previewMode(false, true);
+            window.location.reload(true);
+        }
+        if(WholesaleAIO.previewMode()){
+            var previewBar = '<div class="wholesaleAllInOnePreview" style="background-color: white;display: inline-block;width: 100%;padding: 17px 0px;box-shadow: rgba(0, 0, 0, 0.2) 0px -1px 3px;overflow: hidden;position: fixed;bottom: 0;left: 0;right: 0;z-index: 3147483648;opacity: 0.9;"><div style="float:left;display:inline-block;padding-left:20px"><p style="margin: 0px;color:black"><span>Wholesale All In One Preview:</span><b> Draft rules are visible in this preview but not visible to live customers.</b></p></div><div style="float:right;display:inline-block;padding-right: 23px;"><span style="background-color: transparent;border: 0px;color:#007ace;cursor: pointer;" onclick="wsaioClosePreview();">Close Preview</span></div></div>'
+            if($(".wholesaleAllInOnePreview").length==0){
+                $("body").append(previewBar)
+            }
+        }
+        var app_url = "https://wholesales.digitalcoo.com";
+        var tem_moc = {{shop.metafields.waioMOC | json }};
+        var w_original_total_price = {{cart.items_subtotal_price | json}};
+        var w_total_weight = {{cart.total_weight | json}};
+        var w_item_count = {{cart.item_count | json}};
+        var w_weight_with_unit = {{ cart.total_weight | weight_with_unit | json}};
+        var currency = {{ shop.currency | json }};
+        var shopCurrency = {{ shop.currency | json }};
+        var is_loggedIn = {% if customer %}true{%else%}false{% endif %};
+        var currency_format = {{ shop.money_format | json }};
+        var currency_format_without_demical = currency_format.replace('amount', 'amount_no_decimals');
+        window.current_product = {{ product | json }} || window.current_product || {};
+        var current_product_in_collections = {{ product.collections | json }} || [];
+        var global_counter = 0;//for schedule clock
+        var products_with_collections = {{product_json}};
+        var shop = {{shop.domain | json }};
+        var shop_domain = {{shop.permanent_domain | json }};
+        var shopDomain = {{shop.domain | json }};
+        var customer_id  = {{ customer.id | json }};
+        var customerId = {{ customer.id | json }};
+        var customerTags = {{ customer.tags | json }} || [];
+        var customer_tags = {{ customer.tags | json }} || [];
+        var homePageCollection = {{collections.frontpage | json }};
+        var coupon_code_id = "ca54e877f83b5bf5882aeb63f2ceb5b16c"; //pre defined id
+        var coupon_code_entitled_ids = {variants:[],products:[]};
+        var coupon_code_applied = "";
+        var cart = {{ cart | json }};
+        var waio_discount_applied = [];
+        var collection_handle = '{{ collection.handle }}';
+        var discountRuleTracking = [];
+        var qb_rules = [], dg_rules = [], ws_settings = [];
+        try{
+            qb_rules = JSON.parse('[{{wholesaleQB}}]');
+        }catch(e){log("JSON Parsing error.",e,"error")}
+        try{
+            dg_rules = JSON.parse('[{{discountRule}}]');
+        }catch(e){log("JSON Parsing error.",e,"error")}
+        try{
+            ws_settings = JSON.parse('[{{ws_general_settings}}]');
+        }catch(e){log("JSON Parsing error.",e,"error")}
+        var app_enabled = ws_settings[0]?ws_settings[0].settings.enable_app?true:false:false;
+        window.selected_variant_id = '{{selected_variant}}';
+        try{
+            if(typeof ws_settings[0] !== "undefined"){
+                ws_settings[0].settings.app_enabled = ws_settings[0].settings.enable_app;
+            }
+        }catch(e){log(e)}
+        var waio_settings = ws_settings[0]?ws_settings[0].settings:{};
+        WholesaleAIO.ws_settings = waio_settings;
+        if(typeof dg_rules !== "undefined" && dg_rules.length > 0){
+            dg_rules.forEach(function(_d,_i){
+                if(_d.status === "published"){
+                    wsaioPreviewMode = false;
+                }
+                _d.customers_group = dg_rules[_i].customers_group.tag_base_customers? "tagged_customer":dg_rules[_i].customers_group.customers
+            });
+            // sorting array to highest priority
+            var sortOrder = ["tagged_customer", "only_logged_in_customers", "all"];
+            var sortOrder2 =  ["specific_variants", "specific_products", "specific_collections","entire_store"];
+            var temp = [];
+            for(var iter = 0; iter < sortOrder2.length; iter++){
+                var _d = sortOrder2[iter];
+                var temp1 = dg_rules.filter(function(x){return x.applies_to === _d});
+                temp1.sort(function(a,b){
+                    var compA = $.inArray(a.customers_group, sortOrder);
+                    var compB = $.inArray(b.customers_group, sortOrder);
+                    return (compA < compB) ? -1 : (compA > compB) ? 1 : 0;
+                });
+                temp1.forEach(function(_f,_j){
+                    temp.push(_f);
+                });
+            }
+            dg_rules = temp; 
+        }
+        if(typeof qb_rules !== "undefined" && qb_rules.length > 0){
+            qb_rules.forEach(function(a,b){
+                if(a.status === "published"){
+                    wsaioPreviewMode = false;
+                }
+            });
+            var sortOrder = ["tag_based", "only_logged_in", "all"];
+            var sortOrder2 =  ["selected_variants", "selected_products","selected_collections","entire_store"];
+            var temp = [];
+            for(var iter = 0; iter < sortOrder2.length; iter++){
+                var _d = sortOrder2[iter];
+                var temp1 = qb_rules.filter(function(x){return x.qb_applies_to === _d});
+                temp1.sort(function(a,b){
+                    var compA = $.inArray(a.customers_group, sortOrder);
+                    var compB = $.inArray(b.customers_group, sortOrder);
+                    return (compA < compB) ? -1 : (compA > compB) ? 1 : 0;
+                });
+                temp1.forEach(function(_f,_j){
+                    temp.push(_f);
+                });
+            }
+            qb_rules = temp; 
+        }
+        var tempWaioQC = {{shop.metafields.waioQC | json }};
+        var waioQCTemp = [];
+        waioQCTemp = waioQCTemp.concat(Object.keys(tempWaioQC).map(function(a){return tempWaioQC[a]}));
+        WholesaleAIO.quantity_controls = [];
+        if(typeof waioQCTemp !== "undefined" && waioQCTemp.length > 0){
+            var sortOrder = ["tag_based", "logged_in", "all"];
+            var sortOrder2 =  ["variants", "products","collections","entire_store"];
+            var temp = [];
+            for(var iter = 0; iter < sortOrder2.length; iter++){
+                var _d = sortOrder2[iter];
+                var temp1 = waioQCTemp.filter(function(x){return x.applies_to === _d});
+                temp1.sort(function(a,b){
+                    var compA = $.inArray(a.customer_group, sortOrder);
+                    var compB = $.inArray(b.customer_group, sortOrder);
+                    return (compA < compB) ? -1 : (compA > compB) ? 1 : 0;
+                });
+                temp1.forEach(function(_f,_j){
+                    temp.push(_f);
+                });
+            }
+            WholesaleAIO.quantity_controls = temp; 
+        }
+        // If there is preview move
+        function removeQueryString(a,d){var b=document.location.href,c=location.search;""!=a?(d=encodeURIComponent(d),a=a+"="+d,"-1"!=c.indexOf("?"+a+"&")?b=b.replace("?"+a+"&","?"):"-1"!=c.indexOf("&"+a+"&")?b=b.replace("&"+a+"&","&"):"-1"!=c.indexOf("?"+a)?b=b.replace("?"+a,""):"-1"!=c.indexOf("&"+a)&&(b=b.replace("&"+a,""))):(c=location.search,b=b.replace(c,""));history.pushState({state:1,rand:Math.random()},"",b)};
+        function getParameterByName(e){for(var b=[],c=window.location.search.substring(1).split("&"),a=0;a<c.length;a++){var d=c[a].split("=");d[0]==e&&b.push(decodeURIComponent(d[1]))}return b};
+        waio_settings&&waio_settings.selectors&&0<waio_settings.selectors.length&&(waioSelectors=waio_settings.selectors[0]);waio_settings&&waio_settings.translations&&0<waio_settings.translations.length&&(waioTranslations=waio_settings.translations[0]);
+        var ppDiscountTEXT={text:{prefix:waioTranslations.qualifies_message_prefix,suffix:waioTranslations.qualifies_message_suffix},style:{ppdt_additionalStyle:!1}};
+        var productInCollects = [{{productInCollects}}];
+        WholesaleAIO.productInCollects = productInCollects;
+        var ws_general_settings={all:waio_settings,app_enabled:waio_settings.app_enabled,compare_at_price:waio_settings.compare_at_price,discount_method:waio_settings.discount_method,price_design_config:waio_settings.price_design_config?waio_settings.price_design_config[0]?waio_settings.price_design_config[0]:{}:{},pp_discount_text:waio_settings.pp_discount_text[0]?waio_settings.pp_discount_text[0]:ppDiscountTEXT,sale_clock:waio_settings.sale_clock,table_widget_style:waio_settings.table_widget_style[0],tableStyle:function(){return this.table_widget_style&&this.table_widget_style.default_table_style?"background:"+this.table_widget_style.table_hex_bg_clr+" !important;color:"+this.table_widget_style.table_hex_fg_clr+" !important;":""},tableBorderColor:function(){return this.table_widget_style&&this.table_widget_style.default_table_style?"border-color:"+this.table_widget_style.table_border_hex_clr+" !important;text-align:"+this.table_widget_style.table_text_align+" !important;":""},tableStyleThead:function(){return this.table_widget_style&&this.table_widget_style.default_table_style?"background:"+this.table_widget_style.thead_hex_bg_clr+" !important;color:"+this.table_widget_style.thead_hex_fg_clr+" !important;text-align:"+this.table_widget_style.table_text_align+" !important;":""},tableTemplateClass:function(){return this.table_widget_style&&this.table_widget_style.default_table_style?this.table_widget_style.table_template_class:""},ppDiscountStyle:function(){if(this.pp_discount_text&&this.pp_discount_text.style.ppdt_additionalStyle){var a=this.pp_discount_text.style;return"font-size:"+a.ppdtFontSize+"px !important;text-align:"+a.ppdtTextAlign+" !important;background-color:"+a.ppdt_hex_bg_color+" !important;color:"+a.ppdt_hex_fg_color+"!important;"}return""}};
+        waioMOC.rules=[];waioMOC.rules=waioMOC.rules.concat(Object.keys(tem_moc).map(function(a){return tem_moc[a]}));waioMOC.cart={original_total_price:w_original_total_price,total_weight:w_total_weight,item_count:w_item_count,weight_with_unit:w_weight_with_unit};waioMOC.oc={};
+        WholesaleAIO.disable_checkout=!1;
+        function log(a,b,c){if(WholesaleAIO.debug)if("undefined"!==typeof c)switch(c){case "warning":console.warn(a,b);break;case "error":console.error(a,b);break;case "info":console.info(a,b);break;default:console.log(a,b)}else console.log(a,b)};
+        WholesaleAIO.priceFormat=function(a){a=a.toString();-1<a.indexOf(".")?2<a.split(".")[1].length?a=a.substr(0,a.indexOf(".")+3):2>a.split(".")[1].length&&(a+="0"):a=Number(a).toFixed(2);a=a.replace(".","");return Number(a)};
+        WholesaleAIO.formatMoney=function(a,g){function b(a,c,b,d){b=b||",";d=d||".";if(isNaN(a)||null===a)return 0;a=(a/100).toFixed(c);a=a.split(".");return a[0].replace(/(d)(?=(ddd)+(?!d))/g,"$1"+b)+(a[1]?d+a[1]:"")}"string"===typeof a&&(a=a.replace(".",""));var c="",e=/\\{\\{\\s*(\\w+)\\s*\\}\\}/,f=g||currency_format||"{%raw%}\${{amount}}{%endraw%}";switch(f.match(e)[1]){case "amount":c=b(a,2);break;case "amount_no_decimals":c=b(a,0);break;case "amount_with_comma_separator":c=b(a,2,".",",");break;case "amount_no_decimals_with_comma_separator":c=b(a,0,".",",");break;case "amount_no_decimals_with_space_separator":c=b(a,0," ");break;case "amount_with_apostrophe_separator":c=b(a,2,"'")}return f.replace(e,c)};
+		function mF(a){if(isNaN(a)||null==a)return 0;a=a.toString();if("string"==typeof a&&-1<a.indexOf("."))return 2>a.split(".")[1].length?Number(a).toFixed(2).toString():a.toString();a=(Number(a)/100).toFixed(2);return a.toString()};
+        function pF(a){if(isNaN(a))return 0;a=a.toString();-1<a.indexOf(".")&&(2<a.split(".")[1].length?a=a.substr(0,a.indexOf(".")+3):2>a.split(".")[1].length&&(a+="0"),a=a.replace(".",""));return Number(a)}function decimal(a){try{return isNaN(a)||null==a?0:a.toFixed(2)}catch(b){return a}};
+        String.prototype.replaceMeW=function(a,b){return this.split(a).join(b)};
+        function get_est_time(callback) {
+            $.ajax({
+                type: "GET",
+                url: app_url + "/est-time-now/v2",
+                cache: !1,
+                dataType: "json",
+                success: function (a) {
+                    if("function" === typeof callback){
+                        callback(null,a);
+                    }
+                },
+                error: function (a) {
+                    if("function" === typeof callback){
+                        callback(a,null);
+                    }
+                }
+            })
+        };
+        function compareAndSortVD(a,b){return a.qty<b.qty?-1:a.qty>b.qty?1:0};
+        function removeLocalStorage(a){sessionStorage.removeItem(a)}function setLocalStorage(a,b){sessionStorage.removeItem(a,b)}function getJsonLocalStorage(a){return sessionStorage.getItem(a)?JSON.parse(sessionStorage.getItem(a)):null};
+        function getOptURLValue(a){return(new URL(window.location.href)).searchParams.get(a)};
+        // START MINIMUM ORDER CONTROL
+        var $jscomp=$jscomp||{};$jscomp.scope={};$jscomp.arrayIteratorImpl=function(a){var b=0;return function(){return b<a.length?{done:!1,value:a[b++]}:{done:!0}}};$jscomp.arrayIterator=function(a){return{next:$jscomp.arrayIteratorImpl(a)}};$jscomp.makeIterator=function(a){var b="undefined"!=typeof Symbol&&Symbol.iterator&&a[Symbol.iterator];return b?b.call(a):$jscomp.arrayIterator(a)};
+        function disable_checkout(a,b,d){b=b||waioMOC.oc.message;d=d||waioSelectors.checkout;a||WholesaleAIO.disable_checkout?(a='<div class="waio-orderControl-message">'+b+"</div>",0<$(".waio-orderControl-message").length?$(".waio-orderControl-message").text(b):$(a).insertAfter(d),$(d).off(),$(d).attr("disabled","disabled"),$(d).addClass("checkout-disabled")):($(".waio-orderControl-message").html(""),$(d).removeClass("checkout-disabled"),$(d).removeAttr("disabled"),$(d).attr("name","checkout"))}
+        function minOrderControl(){for(var a=[],b=0;b<waioMOC.rules.length;b++){var d=waioMOC.rules[b];"active"===d.status&&mocIsValidCustomer(d)&&a.push(d)}if(0<a.length){b={};if(1===a.length)b=a[0];else{d=a.findIndex(function(a){return"tag_based"===a.customer_group});var c=a.findIndex(function(a){return"logged_in"===a.customer_group}),e=a.findIndex(function(a){return"all"===a.customer_group});-1<d?b=a[d]:-1<c?b=a[c]:-1<e&&(b=a[e])}log(b);if("undefined"!==typeof b.rules){a=[];d=$jscomp.makeIterator(b.rules);for(c=d.next();!c.done;c=d.next())switch(c=c.value,c.column){case "cart_original_total_price":switch(c.relation){case "equal":Number(c.condition)==mF(Number(waioMOC.cart.original_total_price))?a.push("yes"):a.push("no");break;case "not_equal":Number(c.condition)!=mF(Number(waioMOC.cart.original_total_price))?a.push("yes"):a.push("no");break;case "greater_than":Number(c.condition)<mF(Number(waioMOC.cart.original_total_price))?a.push("yes"):a.push("no");break;case "less_than":Number(c.condition)>mF(Number(waioMOC.cart.original_total_price))?a.push("yes"):a.push("no");break;default:cosnole.log("invalid relation value in MOC's nested switch")}break;case "cart_item_count":switch(c.relation){case "equal":Number(c.condition)==Number(waioMOC.cart.item_count)?a.push("yes"):a.push("no");break;case "not_equal":Number(c.condition)!=Number(waioMOC.cart.item_count)?a.push("yes"):a.push("no");break;case "greater_than":Number(c.condition)<Number(waioMOC.cart.item_count)?a.push("yes"):a.push("no");break;case "less_than":Number(c.condition)>Number(waioMOC.cart.item_count)?a.push("yes"):a.push("no");break;default:cosnole.log("invalid relation value in MOC's nested switch")}break;case "cart_total_weight":switch(c.relation){case "equal":Number(c.condition)==Number(waioMOC.cart.total_weight)?a.push("yes"):a.push("no");break;case "not_equal":Number(c.condition)!=Number(waioMOC.cart.total_weight)?a.push("yes"):a.push("no");break;case "greater_than":Number(c.condition)<Number(waioMOC.cart.total_weight)?a.push("yes"):a.push("no");break;case "less_than":Number(c.condition)>Number(waioMOC.cart.total_weight)?a.push("yes"):a.push("no");break;default:cosnole.log("invalid relation value in MOC's nested switch")}break;default:cosnole.log("invalid column value in MOC's parent switch")}log(a);waioMOC.oc=b;"and"===b.rules_operator?-1<a.indexOf("no")?(WholesaleAIO.disable_checkout=!0,WholesaleAIO.checkout_message=b.message,WholesaleAllInOne.disable_checkout(!0,b.message)):(WholesaleAIO.disable_checkout=!1,WholesaleAIO.checkout_message=b.message,WholesaleAllInOne.disable_checkout(!1,b.message)):-1===a.indexOf("yes")?(WholesaleAIO.disable_checkout=!0,WholesaleAIO.checkout_message=b.message,WholesaleAllInOne.disable_checkout(!0,b.message)):(WholesaleAIO.disable_checkout=!1,WholesaleAIO.checkout_message=b.message,WholesaleAllInOne.disable_checkout(!1,b.message))}else log("Something missing in MOC")}else log("Minimum Order Control is not valid for this customer"),log("Minimum Order Control is not valid for this customer")}
+        function mocIsValidCustomer(a){var b=!0;"all"!==a.customer_group?(is_loggedIn||(b=!1),"tag_based"===a.customer_group?isTagged(a.customer_tags)||(b=!1):a.except_tags&&isTagged(a.excepted_tags)&&(b=!1)):(a.except_tags&&isTagged(a.excepted_tags)&&(b=!1),a.except_logged_in&&is_loggedIn&&(b=!1));return b}
+        function isTagged(a){if("undefined"===typeof a||!is_loggedIn)return!1;var b=!1,d=customer_tags.map(function(a){return a.toLowerCase()});a=a.map(function(a){return a.toLowerCase()});a=$jscomp.makeIterator(a);for(var c=a.next();!c.done;c=a.next())if(-1<d.indexOf(c.value)){b=!0;break}return b};
+        // END MINIMUM ORDER CONTROL
+        WholesaleAIO.priceFloat=function(a){if(isNaN(a)||!a)return 0;"number"==typeof a&&(a=a.toString());if("string"==typeof a&&-1<a.indexOf(".")){a=a.substring(0,a.indexOf(".")+3);try{a=Number(a).toFixed(2)}catch(b){log(b)}}else try{a=Number(a).toFixed(2)}catch(b){log(b)}return a.toString()};
+		WholesaleAIO.mF=function(a){if(isNaN(a)||!a)return 0;a=(a/100).toFixed(2);"number"==typeof a&&(a=a.toString());"string"==typeof a&&-1<a.indexOf(".")&&(2>a.split(".")[1].length?a+="00":2<a.split(".")[1].length&&(a=a.substring(0,a.indexOf(".")+3)));return a};
+        WholesaleAllInOne.order_control = function(){minOrderControl();};
+        WholesaleAllInOne.disable_checkout = function(c,m,el){disable_checkout(c,m,el);};
+        function getJSONfromLocalStorage(a){return null!==localStorage.getItem(a)?JSON.parse(localStorage.getItem(a)):{}};
+        // Cart template
+        // Wholesale signup form function
+        window.signup_form_try_counter=0;WholesaleAllInOne.appendSignUpForm=function(a){signup_form_try_counter++;0<$(".wholesale-all-in-one-registration-form").length?($(".wholesale-all-in-one-registration-form").html(WholesaleAIO.signupForm.form_html),log("wholesale signup form was appended!")):2E3>500*signup_form_try_counter?(log("Please wait for "+500*signup_form_try_counter+" second. We are trying to append wholesale signup form"),setTimeout(function(){WholesaleAllInOne.appendSignUpForm()},500*signup_form_try_counter)):log("Try ended. Wholesale signup form div was not found.")};WholesaleAllInOne.appendSignUpForm();
+        // end wholesale signup form function
+        WholesaleAIO.savedAmount = function (price, discont, type) {
+            if (price === null || discont === null || type === null || isNaN(price) || isNaN(discont)) return null;
+            var in_percent = 0;
+            var fixed_amount = 0;
+            switch (type) {
+                case "percentage":
+                    in_percent = Math.round(discont);
+                    fixed_amount = Number(price) * Number(discont) / 100;
+                break;
+                case "price_discount":
+                    in_percent = Math.round(100 * Number(discont) / price);
+                    fixed_amount = discont;
+                    if(Number(price) < Number(discont)){
+                        fixed_amount = price;
+                        in_percent=100;
+                    }
+                break;
+                case "fixed_price":
+                    fixed_amount = Number(price) - Number(discont);
+                    in_percent = Math.round(fixed_amount / Number(price) * 100);
+                    if(Number(price) < Number(discont) || Number(discont) === Number(price)){
+                        fixed_amount = 0;
+                        in_percent = 0;
+                    }
+                    else if (Number(discont) === 0){
+                        fixed_amount = price;
+                        in_percent = 100; 
+                    }
+                break;
+                default:
+                return {
+                    error: "Discount value is not valid. Valid values are percentage,price_discount,fixed_price"
+                }
+            }
+            if(Number(in_percent) < 0){
+                in_percent = 0;
+            }
+            else if(Number(in_percent) > 100){
+                in_percent = 100;
+            }
+            return {
+                in_percent: in_percent+"%",
+                fixed_amount: Number(Number(fixed_amount).toFixed(2))
+            }
+        }
+        WholesaleAIO.savedAmount2 = function (original_price, discount_price) {
+            if (original_price === null || discount_price === null || isNaN(original_price) || isNaN(discount_price)) return null;
+            var in_percent = 0;
+            var fixed_amount = 0;
+            fixed_amount=original_price-discount_price;
+            in_percent=100-(discount_price/original_price)*100;
+            return {
+                in_percent: Math.round(in_percent)+"%",
+                fixed_amount: Number(Number(fixed_amount).toFixed(2))
+            }
+        }
+        function manageOrderControl(data){
+            var original_total_price = data.cart_subtotal
+            if(typeof original_total_price === "string"){
+                original_total_price = original_total_price.replace(".","");
+            }
+            waioMOC.cart.original_total_price = original_total_price;
+            WholesaleAllInOne.order_control();
+        }
+        function saved_amount_msg(a){a=WholesaleAIO.formatMoney(a,currency_format);a=waio_saved_amount_text.replaceMeW("[[saved_amount]]",a);$(waioSelectors.savedAmount).html(a)};
+        function remove_saved_amount_msg(){$(waioSelectors.savedAmount).html("");}        
+        function cart_saved_amount_msg(data){
+            log("data",data)
+            var _total_price_Amount=0,_total_discount_Amount=0;
+            if(data.line_items && typeof data.line_items !== "undefined")
+            {
+            data.line_items.forEach(function(_itm, i){
+                var _selector = $("["+waioSelectors.waioSingleDataKeyAttr+"="+_itm.id+"]");
+                if(_selector.length == 0) _selector = $("["+waioSelectors.wholesaleDataKeyAttr+"="+_itm.id+"]");
+                var isCompareAt = _selector.attr('data-compare-price');
+                if(!WholesaleAIO.ws_settings.show_compare_at_price) isCompareAt = null;
+                if(typeof isCompareAt !== "undefined" &&isCompareAt!==null){
+                isCompareAt=(Number(mF(Number(isCompareAt))) * Number(_itm.quantity));
+                }
+                else{
+                isCompareAt=Number(mF(Number(_itm.price)))*Number(_itm.quantity);
+                }
+                if(_itm.applied_discount && _itm.applied_discount.amount) _total_discount_Amount+=((Number(mF(Number(_itm.price)))*Number(_itm.quantity) )-Number(_itm.applied_discount.amount));
+                _total_price_Amount+=isCompareAt;
+                log('isCompareAt', isCompareAt)
+            });
+            data.original_total_price=_total_price_Amount;
+            }
+            else if (data.response && data.response.cart){
+            data.response.cart.items.forEach(function(_itm, i){
+                var _selector = $("["+waioSelectors.waioSingleDataKeyAttr+"="+_itm.id+"]");
+                if(_selector.length == 0) _selector = $("["+waioSelectors.wholesaleDataKeyAttr+"="+_itm.id+"]");
+                var isCompareAt = _selector.attr('data-compare-price');
+                if(!WholesaleAIO.ws_settings.show_compare_at_price) isCompareAt = null;
+                if(typeof isCompareAt !== "undefined" &&isCompareAt!==null){
+                isCompareAt=(Number(mF(Number(isCompareAt))) * Number(_itm.quantity));
+                }
+                else{
+                isCompareAt=Number(mF(Number(_itm.price)))*Number(_itm.quantity);
+                }
+                _total_price_Amount+=isCompareAt;
+                log('isCompareAt', isCompareAt)
+            });
+            _total_discount_Amount=data.app_final_subtotal;
+            data.original_total_price=_total_price_Amount;
+            }
+            var savedAmount=WholesaleAIO.savedAmount2(_total_price_Amount,_total_discount_Amount),saved_in_percent="",saved_fixed_amount="";
+            log("WAIO LOG! saved amount results2",savedAmount);
+            savedAmount&&!savedAmount.error?(saved_in_percent=savedAmount.in_percent,saved_fixed_amount=savedAmount.fixed_amount):log("WAIO Warning","Saved amount not working as expected. Debug code to cart_saved_amount_msg() to find out the bug or error.","warning"); 
+            saved_fixed_amount = WholesaleAIO.formatMoney(WholesaleAIO.priceFormat(saved_fixed_amount), currency_format);
+            saved_fixed_amount=waio_saved_amount_text.replaceMeW("[[saved_amount]]",saved_fixed_amount);
+            $(waioSelectors.savedAmount).html(saved_fixed_amount);
+        }
+        // end cart template
+        // Quantity Controls functions
+        function quantity_controller(config, callback){
+            if("undefined"===typeof config)var config={};
+            null===config&&(config={});
+            var productId = config.productId || current_product.id;
+            var variantId = config.variantId || selected_variant_id;
+            var collectionId = config.collectionId || collection_id;
+            var custom_message = config.message || null;
+            var qc_variants = [];
+            var qc_products = [];
+            var qc_collections = [];
+            var qc_entireStore = [];
+            for(var iter = 0; iter < WholesaleAIO.quantity_controls.length; iter++){
+                var rule = WholesaleAIO.quantity_controls[iter];
+                if(rule.status !== "enabled") continue;
+                if(rule.customer_group === "logged_in" && !is_loggedIn) continue;
+                else if(rule.customer_group === "tag_based"){
+                    if(!is_loggedIn) continue;
+                    var cus_tags = customerTags.map(function (e) {
+                    return e.toLowerCase()
+                    });
+                    var tagFound = false;
+                    for(var iter1 = 0; iter1 < rule.customer_tags.length; iter1++){
+                        var tag = rule.customer_tags[iter1];
+                        if(cus_tags.indexOf(tag.toLowerCase())>-1){
+                            tagFound = true; break;
+                        }
+                    }
+                    if(!tagFound) continue;
+                }
+
+
+
+              getAllRelevantQC({
+                rule: rule,
+                variantId: variantId,
+                productId: productId,
+                collectionId: collectionId,
+                qc_variants: qc_variants,
+                qc_products: qc_products,
+                qc_collections: qc_collections,
+                qc_entireStore: qc_entireStore
+              }, function(results){
+                log("results",results);
+                var pushData = {
+                  variantId: variantId,
+                  productId: productId,
+                  collectionId: collectionId,
+                  customer_group: rule.customer_group,
+                  internal_name: rule.internal_name,
+                  default_quantity: rule.default_quantity,
+                  maximum_quantity: rule.maximum_quantity,
+                  minimum_quantity: rule.minimum_quantity,
+                  quantity_increment: rule.quantity_increment,
+                  applies_to: rule.applies_to,
+                  message: custom_message || rule.message,
+                  selector_for_individual_variant: rule.selector_for_individual_variant,
+                  minimum_quantity_method: rule.minimum_quantity_method
+                };
+                if(results.type === "variants" && results.status === "approved"){
+                  pushData.variants = rule.variants;
+                  qc_variants.push(pushData);
+                }
+                if(results.type === "products" && results.status === "approved"){
+                  pushData.products = rule.products;
+                  qc_products.push(pushData);
+                }
+                if(results.type === "collections" && results.status === "approved"){
+                  pushData.collections = rule.collections;
+                  qc_collections.push(pushData);
+                }
+                if(results.type === "entire_store" && results.status === "approved"){
+                  pushData.entire_store = true;
+                  qc_entireStore.push(pushData);
+                }
+              });
+            }//end forloop
+            log("qc_variants", qc_variants);
+            log("qc_products", qc_products);
+            log("qc_collections", qc_collections);
+            log("qc_entireStore", qc_entireStore);
+            var variants_final = [];
+            var products_final = {};
+            var collections_final = {};
+            var entireStore_final = {};
+            for(var iter = 0; iter < qc_variants.length; iter++){
+              var v = qc_variants[iter];
+              var vcg = variants_final.find(function(x){return x.customer_group});
+              if( "undefined" !== typeof vcg ){
+
+                switch(vcg){
+                    case "tag_based":
+                      if(vcg != "tag_based"){
+                        variants_final.push(v);
+                      }
+                      break;
+                    case "logged_in":
+                      if(vcg != "tag_based"){
+                        variants_final.push(v);
+                      }
+                      break;
+                    case "all":
+                      if(vcg != "tag_based" && variants_final.customer_group != "logged_in"){
+                        variants_final.push(v);
+                      }
+                      break;
+                  default:
+                      break;
+                  }
+
+
+
+              }
+
+              else{
+                variants_final.push(v);
+              }
+            }
+            for(var iter = 0; iter < qc_products.length; iter++){
+              var v = qc_products[iter];
+              if( "undefined" !== typeof products_final.customer_group ){
+                switch(v.customer_group){
+                  case "tag_based":
+                      if(products_final.customer_group != "tag_based"){
+                        products_final = v;
+                      }
+                      break;
+                  case "logged_in":
+                      if(products_final.customer_group != "tag_based"){
+                        products_final = v;
+                      }
+                      break;
+                  case "all":
+                      if(products_final.customer_group != "tag_based" && products_final.customer_group != "logged_in"){
+                        products_final = v;
+                      }
+                      break;
+                  default:
+                      break;
+                  }
+              }
+              else{
+                products_final = v;
+              }
+            }
+            for(var iter = 0; iter < qc_collections.length; iter++){
+              var v = qc_collections[iter];
+              if( "undefined" !== typeof collections_final.customer_group ){
+                switch(v.customer_group){
+                  case "tag_based":
+                      if(collections_final.customer_group != "tag_based"){
+                        collections_final = v;
+                      }
+                      break;
+                  case "logged_in":
+                      if(collections_final.customer_group != "tag_based"){
+                        collections_final = v;
+                      }
+                      break;
+                  case "all":
+                      if(collections_final.customer_group != "tag_based" && collections_final.customer_group != "logged_in"){
+                        collections_final = v;
+                      }
+                      break;
+                  default:
+                      break;
+                  }
+              }
+              else{
+                collections_final = v;
+              }
+            }
+              for(var iter = 0; iter < qc_entireStore.length; iter++){
+              var v = qc_entireStore[iter];
+              if( "undefined" !== typeof entireStore_final.customer_group ){
+                switch(v.customer_group){
+                  case "tag_based":
+                      if(entireStore_final.customer_group != "tag_based"){
+                        entireStore_final = v;
+                      }
+                      break;
+                  case "logged_in":
+                      if(entireStore_final.customer_group != "tag_based"){
+                        entireStore_final = v;
+                      }
+                      break;
+                  case "all":
+                      if(entireStore_final.customer_group != "tag_based" && entireStore_final.customer_group != "logged_in"){
+                        entireStore_final = v;
+                      }
+                      break;
+                  default:
+                      break;
+                  }
+              }
+              else{
+                entireStore_final = v;
+              }
+            }
+            log("variants_final", variants_final);
+            log("products_final", products_final);
+            log("collections_final", collections_final);
+            log("entireStore_final", entireStore_final);
+            var quantity_controls = [];
+            if("undefined" !== typeof variants_final.find(function(x){return x.applies_to})){
+                variants_final.forEach(function(_d,i){quantity_controls.push(_d);});
+                if("undefined" !== typeof products_final.applies_to){
+                    quantity_controls.push(products_final);
+                }
+            }
+            else if("undefined" !== typeof products_final.applies_to){
+              quantity_controls.push(products_final);
+            }
+            else if("undefined" !== typeof collections_final.applies_to){
+              quantity_controls.push(collections_final); 
+            }
+            else if("undefined" !== typeof entireStore_final.applies_to){
+              quantity_controls.push(entireStore_final);
+            }
+            callback(null,{quantity_controls:quantity_controls})
+          }
+        function getAllRelevantQC(data, callback){
+            var $jscomp$destructuring$var0 = data, rule = $jscomp$destructuring$var0.rule, qc_variants = $jscomp$destructuring$var0.qc_variants, qc_products = $jscomp$destructuring$var0.qc_products, qc_collections = $jscomp$destructuring$var0.qc_collections, qc_entireStore = $jscomp$destructuring$var0.qc_entireStore, variantId = $jscomp$destructuring$var0.variantId, productId = $jscomp$destructuring$var0.productId, collectionId = $jscomp$destructuring$var0.collectionId;
+            var status = "rejected";
+            switch (rule.applies_to) {
+                case "variants":
+                    if(variantId){
+                        var find = rule.variants.findIndex(function(x){ return x.id == variantId });
+                        if(find > -1){
+                            status = "approved";
+                        }
+                    }
+                    else{
+                        log("WAIO Warning!","Variant id not found for Quantity controller applies to variants","warning");
+                    }
+                    if(productId){
+                        var find = rule.variants.findIndex(function(x){ return x.product_id == productId });
+                        if(find > -1){
+                            status = "approved";
+                        }
+                    }
+                break;
+                case "products":
+                    if(productId){
+                        var find = rule.products.findIndex(function(x){ return x.id == productId });
+                        if(find > -1){
+                            status = "approved";
+                        }
+                    }
+                    else{
+                        log("WAIO Warning!","Product id not found for Quantity controller applies to products","warning");
+                    }
+                    if(variantId){
+                        try{
+                            for(var iter = 0; iter < rule.products.length; iter++){
+                                var product =  rule.products[iter];
+                                var find = product.variants.findIndex(function(x){ return x.id == variantId });
+                                if(find > -1){
+                                    status = "approved"; break;
+                                }
+                            }
+                        }catch(e){log(e);}
+                    }
+                    break;
+                case "collections":
+                    if(collectionId){
+                        if(rule.collections.findIndex(function(x){return x.id == collectionId }) > -1){
+                            status = "approved";
+                        }
+                    }
+                    else if(productId){
+                        WholesaleAIO.collectionsOfProduct(productId, function(collectionIds){
+                        log("collectionIds",collectionIds);
+                            for(var iter = 0; iter < collectionIds.length; iter++){
+                                var collId = collectionIds[iter];
+                                if(rule.collections.findIndex(function(x){return x.id == collId }) > -1){
+                                    status = "approved"; break;
+                                }
+                            }
+                        });
+                    }
+                    else if(collection_handle == "all"){
+                        if(qc_collections.length == 0){
+                            status = "approved";
+                        }
+                        log("WAIO message: All collections rendered!")
+                    }
+                    else{
+                        log("WAIO message: Current collection's id not found!","warning")
+                    }
+                    break;
+                case "entire_store":
+                    if(WholesaleAIO.template !== "product"){
+                        if(qc_collections.length === 0 && qc_products.length === 0 && qc_variants.length === 0){
+                            status = "approved";
+                        }
+                    }
+                    else{
+                        if(qc_variants.length === 0){
+                            status = "approved";
+                        }
+                        {%if template.name == 'index' or template.name == 'search'%}
+                        status = "approved";
+                        {%endif%}
+                    }
+                    break;
+                default:
+                    break;
+            }
+            callback({type:rule.applies_to,status:status});
+        }
+        function quantityControls__cart(config, callback){
+            if("undefined"===typeof config)var config={};
+            null===config&&(config={});
+            var elementSelector = config.elementSelector || "[data-variant-id]";
+            var variantIdAttribute = config.variantIdAttribute || "data-variant-id";
+            var productIdAttribute = config.productIdAttribute || "data-product-id";
+            if($(elementSelector).length > 0){
+                $(elementSelector).each(function(e,a){
+                    var $variantId = $(this).attr(variantIdAttribute);
+                    var $productId = $(this).attr(productIdAttribute);
+                    config.variantId = $variantId;
+                    if($productId){
+                        config.productId = $productId;
+                    }
+                    WholesaleAllInOne.quantityController(config, function(e,quantity_controls){
+                        if(e){
+                            log(e);
+                            callback(e, null);
+                        }
+                        else{
+                            callback(null, {
+                                quantity_controls: quantity_controls,
+                                elementSelector: "["+variantIdAttribute+"='"+$variantId+"']"
+                            });
+                        };
+                    });
+                });
+            }
+            else{
+                callback("elementSelector could not found any nodeElement. Config elementSelector for Quantity controller to work on cart template.", null);
+            }
+        }
+        // End Quantity Controls functions
+        WholesaleAllInOne.quantityController = function(config, callback){
+            if("undefined"===typeof config)var config={};
+            null===config&&(config={});
+            if(config.productHandle){
+                WholesaleAIO.getProductByHandle(config.productHandle, function(e,product){
+                    if(product){
+                        config.productId = product.id;
+                        if(!config.variantId){
+                            try{
+                                config.variantId = product.variants[0].id;
+                            }catch(e){log(e)}
+                        }
+                    }
+                    quantity_controller(config, callback);
+                });
+            }
+            else{
+                quantity_controller(config, callback);
+            }
+        }
+        WholesaleAllInOne.cartQuantityController = function(config,callback){
+            quantityControls__cart(config,callback)
+        }
+        WholesaleAIO.removeAllEvents = function(el) {
+            try{
+                for(var iter = 0; iter < document.querySelectorAll(el).length; iter++){
+                    var a = document.querySelectorAll(el)[iter];
+                    a.parentNode.replaceChild(a.cloneNode(true), a);
+                }
+            }catch(e){log(e)}
+        }
+        WholesaleAIO.registerEvent = function(el, type, callback) {
+            try{
+                for(var iter = 0; iter < document.querySelectorAll(el).length; iter++){
+                    var a = document.querySelectorAll(el)[iter];
+                    a.addEventListener(type, callback);
+                }
+            }catch(e){log(e)}
+        }
+        WholesaleAllInOne.disable_checkout();
+        WholesaleAllInOne.order_control();
+        // waioSelectors.checkout
+    };
+var waioLoadScript=function(c,b){var a=document.createElement("script");a.type="text/javascript";a.readyState?a.onreadystatechange=function(){if("loaded"==a.readyState||"complete"==a.readyState)a.onreadystatechange=null,b()}:a.onload=function(){b()};a.src=c;document.getElementsByTagName("head")[0].appendChild(a)};
+"undefined"===typeof jQuery||1.7>parseFloat(jQuery.fn.jquery)?waioLoadScript("//ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js",function(){WholesaleAIO.init(jQuery.noConflict(!0))}):WholesaleAIO.init(jQuery);
+</script>
+{% endif %}
